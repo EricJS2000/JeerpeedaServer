@@ -5,7 +5,7 @@ import java.net.*;
 import java.text.*;
 
 //Authored by Team Jeerpeeda
-//Build v0.1
+//Build v0.2
 //11082013
 
 public class ServerModerator extends Thread {
