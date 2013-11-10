@@ -15,7 +15,7 @@ public class ServerModerator extends Thread {
     private final ArrayList<String> battleQueue = new ArrayList();
     
     //Construct the standard combat menu
-    private final String combatMenu = "1. Slash\n2. Stab\n3. Block\n4. Parry (riposte)\n";
+    private final String combatMenu = "Available combat actions:  slash, stab, kick, or punch\n";
     
     //Method for adding new warriors to the moderator & log
     public synchronized void addWarrior(WarriorObj newWarrior) {
@@ -104,7 +104,7 @@ public class ServerModerator extends Thread {
     
     public String getWarriorList(WarriorObj thisWarrior)
     {
-        String warriorList = "Choose a Warrior to attack:\n";
+        String warriorList = "Choose a Warrior to attack and Combat Action\n" + combatMenu + "\n";
         for (int i=0; i<warriors.size(); i++) {
            WarriorObj clientInfo = (WarriorObj) warriors.get(i);
            
@@ -114,6 +114,8 @@ public class ServerModerator extends Thread {
            warriorList = warriorList + i + ":" + clientInfo.warriorName + "\n";
         }
         
+        warriorList = warriorList + "Enter a warrior number, dash (-) and action; for example, 0-stab: ";
+        
         if (warriors.size() > 1)
             return warriorList;
         else
@@ -122,10 +124,17 @@ public class ServerModerator extends Thread {
     
     public String getWarriorHealth(WarriorObj thisWarrior)
     {
-        String warriorHealth = thisWarrior.warriorName + ", your current health is " +
-                thisWarrior.warriorHealth + "\n";
+        String warriorHealth = "\n\n--------------------------------------------\n" + 
+                thisWarrior.warriorName + ", your current health is " + thisWarrior.warriorHealth + "\n";
         return warriorHealth;
-    }        
+    }
+    
+    public void warriorAttack(WarriorObj attackingWarrior, String defendingWarriorID, String combatAction)
+    {
+        WarriorObj defendingWarrior = (WarriorObj) warriors.get(Integer.parseInt(defendingWarriorID));
+        sendMessageToAllClients(attackingWarrior.warriorName + " has attacked " + defendingWarrior.warriorName +
+                " with " + combatAction + "!");
+    }
     
     public void parseWarriorCommand(String warriorCommand)
     {
@@ -148,14 +157,27 @@ public class ServerModerator extends Thread {
             sendMessageToClient(thisWarrior, getWarriorHealth(thisWarrior));
             sendMessageToClient(thisWarrior, getWarriorList(thisWarrior));
         }
-        else
+        
+        // Check to make sure the warrior has submitted a valid combat action or return invalid option
+        // slash stab kick punch
+        else 
         {
-            
+           if (parsedWarriorCommand.contains("slash"))
+               warriorAttack(thisWarrior,parsedWarriorCommand.substring(0,parsedWarriorCommand.indexOf("-")),"slash");
+           else if (parsedWarriorCommand.contains("stab"))
+               warriorAttack(thisWarrior,parsedWarriorCommand.substring(0,parsedWarriorCommand.indexOf("-")),"slash");
+           else if (parsedWarriorCommand.contains("kick"))
+               warriorAttack(thisWarrior,parsedWarriorCommand.substring(0,parsedWarriorCommand.indexOf("-")),"slash");
+           else if (parsedWarriorCommand.contains("punch"))
+               warriorAttack(thisWarrior,parsedWarriorCommand.substring(0,parsedWarriorCommand.indexOf("-")),"slash");
+           else { //Invalid command, send the client the warrior list & actions
+               sendMessageToClient(thisWarrior, "You have sent an invalid command!\n");
+               sendMessageToClient(thisWarrior, getWarriorHealth(thisWarrior));
+               sendMessageToClient(thisWarrior, getWarriorList(thisWarrior));
+           }
         }
             
     }    
-    
-    
     
     /**
      * Infinitely reads messages from the queue and decide whether the command
@@ -174,7 +196,8 @@ public class ServerModerator extends Thread {
                if (warriorCommand.startsWith("(server_message)"))
                     System.out.println(warriorCommand);
                else
-                    parseWarriorCommand(warriorCommand);
+                   // Its not a server message, so process the command and move on 
+                   parseWarriorCommand(warriorCommand);
            }
         } catch (InterruptedException ie) {
            // Thread interrupted. Stop its execution
