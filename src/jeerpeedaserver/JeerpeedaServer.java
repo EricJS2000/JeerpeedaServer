@@ -4,20 +4,20 @@ import java.io.*;
 import java.net.*;
 
 //Authored by Team Jeerpeeda
-//Build v0.3
+//Build v0.1
 //11082013
 
 public class JeerpeedaServer {
 
     public static void main(String[] args) {
-        int listenPort = 1025;
+        int listenPort = 2020;
 
-        //Open the server socket on our specified port
+                //Open the server socket on our specified port
         ServerSocket serverSocket = null;
         try { 
             serverSocket = new ServerSocket(listenPort);
         } catch (IOException e) {
-        System.err.println("Could not open server on TCP port " + listenPort);
+        System.err.println("Could not open server on TCP port " + listenPort + " Reason:" + e.getMessage());
         System.exit(-1);
         }
         
@@ -28,17 +28,17 @@ public class JeerpeedaServer {
         while (true) {
            try {
                Socket socket = serverSocket.accept();
-               WarriorObj warriorInfo = new WarriorObj();
-               warriorInfo.warriorSocket = socket;
+               WarriorObj newWarrior = new WarriorObj();
+               newWarrior.warriorSocket = socket;
                WarriorListener warriorListener =
-                   new WarriorListener(warriorInfo, serverMod);
+                   new WarriorListener(newWarrior, serverMod);
                WarriorSender warriorSender =
-                   new WarriorSender(warriorInfo, serverMod);
-               warriorInfo.thisWarriorListener = warriorListener;
-               warriorInfo.thisWarriorSender = warriorSender;
+                   new WarriorSender(newWarrior, serverMod);
+               newWarrior.thisWarriorListener = warriorListener;
+               newWarrior.thisWarriorSender = warriorSender;
                warriorListener.start();
                warriorSender.start();
-               serverMod.addWarrior(warriorInfo);
+               serverMod.addWarrior(newWarrior);
            } catch (IOException ioe) {
                ioe.printStackTrace();
            }

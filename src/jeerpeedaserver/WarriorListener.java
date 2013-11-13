@@ -26,10 +26,11 @@ public class WarriorListener extends Thread
     {
         try {
            while (!isInterrupted()) {
-               String warriorCommand = mIn.readLine();
-               if (warriorCommand == null)
+               String warriorMessage = mIn.readLine();
+               if (warriorMessage == null)
                    break;
-               thisServerModerator.warriorCommandsQueue(thisWarriorInfo, warriorCommand);
+               //thisServerModerator.warriorCommandsQueue(thisWarriorInfo, warriorCommand);
+               thisServerModerator.warriorCommandsQueue(new MessageContainer(thisWarriorInfo, warriorMessage));
            }
         } catch (IOException ioex) {
            // Problem reading from socket (communication is broken)

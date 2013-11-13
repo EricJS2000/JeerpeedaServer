@@ -2,65 +2,244 @@ package jeerpeedaserver;
 
 import java.util.*;
 import java.net.*;
-import java.text.*;
+import java.io.*;
+import java.nio.file.*;
 
 //Authored by Team Jeerpeeda
-//Build v0.2
+//Build v0.1
 //11082013
 
 public class ServerModerator extends Thread {
 
-    //We build containers for our warriors & for holding queue entries
+    //We build containers for our warriors & for transferring battle actions/updates
     private final ArrayList<WarriorObj> warriors = new ArrayList();
-    private final ArrayList<String> battleQueue = new ArrayList();
+    private final ArrayList<MessageContainer> battleQueue = new ArrayList();
     
-    //Construct the standard combat menu
-    private final String combatMenu = "Available combat actions:  slash, stab, kick, or punch\n";
-    
-    //Method for adding new warriors to the moderator & log
-    public synchronized void addWarrior(WarriorObj newWarrior) {
+    //Method for adding new warriors to the moderator
+    public synchronized void addWarrior(WarriorObj newWarrior) 
+    {
         warriors.add(newWarrior);
-
-        battleQueue.add("(server_message)-" + getTimeStamp() + ": New client/warrior connection from" + 
-                "\nAddress (IP:Port):  " + getClientAddress(newWarrior) + "\n\n");
-        notify();
-}
+        //Set the id of the warrior to be the list size
+        newWarrior.WarriorID = warriors.size();
+        
+        newWarrior.Status = "NeedName";
+        sendMessageToWarrior(new MessageContainer(newWarrior, "Welcome new Warrior.  Please enter a warrior name:"));
+    }
+    private WarriorObj FindWarriorByName(String name)
+    {
+        WarriorObj findWarrior = null;
+        for (WarriorObj warrior: warriors)
+        {
+            if(warrior.WarriorName.equalsIgnoreCase(name))
+            {
+                findWarrior = warrior;
+                break;
+            }
+        }
+        return findWarrior;
+    }
     
-    //Method for deleting warriors from the server.  Makes announcement of a death.
+    private void ResolveConflict(Conflict currentConflict)
+    {
+        //ToDo deterime Helth of attacker and target.  For now, hardcode 10
+        WarriorObj attackerWarrior = currentConflict.Attacker;
+        WarriorObj targetWarrior = currentConflict.Target;
+
+        attackerWarrior.HealthLevel = attackerWarrior.HealthLevel + 10;
+        targetWarrior.HealthLevel = targetWarrior.HealthLevel - 10;
+        
+        MessageContainer attackerMessage = new MessageContainer(attackerWarrior, targetWarrior.WarriorName + " Defended with " +
+                currentConflict.Defence + ". Conflict is over.  Your new health level is " + attackerWarrior.HealthLevel + ".");
+        battleQueue.add(attackerMessage);
+        MessageContainer targetMessage = new MessageContainer(targetWarrior, "Conflict with " + 
+                attackerWarrior.WarriorName + "  is over.  Your new health level is " + targetWarrior.HealthLevel + ".");
+        battleQueue.add(targetMessage);
+        notify();
+        
+        attackerWarrior.Status = "Ready";
+        targetWarrior.Status = "Ready";
+        targetWarrior.currentConfict = null;
+    }
+    
+    //Display List of Registered Warrior to all clients
+    public synchronized  void DisplayWarriorList()
+    {
+        String message = "The BattleFields has changed.  Current Warriors on BattleFields:\n";
+        for (int i=0; i<warriors.size(); i++) 
+        {
+           WarriorObj warrior = (WarriorObj) warriors.get(i);
+           if(warrior.IsRegistered)
+           {
+               message += "Name=" +  warrior.WarriorName + 
+                       ", Health=" + warrior.HealthLevel + 
+                       ", Place of Origin=" + warrior.PlaceOfOrigin + 
+                       ", Description=" + warrior.Description + "\n";
+           }
+        }
+        battleQueue.add(new MessageContainer(null, message));
+        notify();
+    }
+    
+    //Method for deleting warriors from the server & battlefield
     public synchronized void deleteWarrior(WarriorObj existingWarrior)
     {
         int clientIndex = warriors.indexOf(existingWarrior);
         if (clientIndex != -1)
            warriors.remove(clientIndex);
         
-        battleQueue.add("(server_message)-" + getTimeStamp() + ": Client/warrior connection from" + 
-                "\nAddress (IP:Port):  " + getClientAddress(existingWarrior) + "\n\n");
-        notify();
+        DisplayWarriorList();
     }
  
-    /*
-     * Adds given message to the moderator's battle queue with a tag of the
-     * ID of the warrior that sent the message.  For example, "0:Kick-1" would
-     * signify warrior 0 kicking warrior 1.
+    /**
+     * Adds given message to the dispatchers message queue and notifies this
+     * thread to wake up the message queue reader (getNextMessageFromQueue method).
+     * dispatchMessage method is called by other threads (ClientListener) when
+     * a message is arrived.
      */
-    public synchronized void warriorCommandsQueue(WarriorObj existingWarrior, String newCommand)
+    public synchronized void warriorCommandsQueue(MessageContainer messageContainer)
     {
-        newCommand = warriors.indexOf(existingWarrior) + ":" + newCommand;
-        battleQueue.add(newCommand);
-        notify();
+
+        WarriorObj warrior = messageContainer.Warrior;
+        String warriorMessage = messageContainer.Message;
+        String moderatorMessage = "";
+        Socket socket = warrior.warriorSocket;
+        String senderIP = socket.getInetAddress().getHostAddress();
+        String senderPort = "" + socket.getPort();
+        
+        if(!warrior.IsRegistered)
+        {
+         
+            switch (warrior.Status) 
+            {
+                case "NeedName":  
+                    if(!warriorMessage.isEmpty())
+                    {
+                        //Set Warrior Property 
+                        warrior.WarriorName = warriorMessage;
+                        
+                        if(!DoesWarriorFileExist(warrior))
+                        {
+                            //Ask for new Warrior Property
+                            moderatorMessage = "Please enter a warrior Place of Origin:";
+                            warrior.Status = "NeedPlaceOfOrigin";
+                        }
+                        else
+                        {
+                            //Load Warrior
+                            warrior = OpenWarriorFile(warrior);
+                            moderatorMessage = "Welcome new Warrior. All Hail " + warrior.WarriorName + "!!!\n" +
+                                "(To attack a warrior, enter a warrior name, colon, then weapon. i.e.'name:weapon')";;
+                        }                    
+                    }
+                    else
+                    {   
+                        //Reask question
+                        moderatorMessage = "Please enter a warrior name:";
+                        warrior.Status = "NeedName";
+                        
+                    }
+                    break;
+                case "NeedPlaceOfOrigin":  
+                    if(!warriorMessage.isEmpty())
+                    {
+                        //Set Warrior Property 
+                        warrior.PlaceOfOrigin = warriorMessage;
+                        //Ask for new Warrior Property
+                        moderatorMessage = "Please enter a warrior Description:";
+                        warrior.Status = "NeedDescription";                 
+                    }
+                    else
+                    {   
+                        //Reask question
+                        moderatorMessage = "Please enter a warrior Place of Origin:";
+                        warrior.Status = "NeedPlaceOfOrigin";
+                    }
+                    break; 
+                case "NeedDescription":  
+                    if(!warriorMessage.isEmpty())
+                    {
+                        //Set Warrior Property 
+                        warrior.Description = warriorMessage;
+                        
+                        //Load Warrior
+                        warrior = OpenWarriorFile(warrior);
+                        moderatorMessage = "Welcome new Warrior. All Hail " + warrior.WarriorName + "!!!\n" +
+                                "(To attack a warrior, enter a warrior name, colon, then weapon. i.e.'name:weapon')";
+                    }
+                    else
+                    {   
+                        //Reask question
+                        moderatorMessage = "Please enter a warrior Description:";
+                        warrior.Status = "NeedDescription";
+                    }
+                    break; 
+            }
+            messageContainer = new MessageContainer(warrior, moderatorMessage);
+            battleQueue.add(messageContainer);
+            notify();
+        }
+        else if(warriorMessage.contains(":"))
+        {
+            //This is an attacking message
+            String[] subStrings = warriorMessage.split(":");
+            String targetName = subStrings[0];
+            String weapon = subStrings[1];
+            WarriorObj targetWarrior = FindWarriorByName(targetName);
+            if(targetWarrior != null)
+            {
+                warrior.Status = "Attacking";
+                targetWarrior.Status = "Defending";
+                MessageContainer attackerMessage = new MessageContainer(warrior, "You are currently attacking " + 
+                        targetWarrior.WarriorName + " with a " + weapon + ".");
+                battleQueue.add(attackerMessage);
+                MessageContainer targetMessage = new MessageContainer(targetWarrior, "You are currently be attacked by " + 
+                        warrior.WarriorName + " with a " + weapon + ".\n"+
+                        "Enter a defence for this attack:");
+                battleQueue.add(targetMessage);
+                notify();
+                
+                Conflict conflict = new Conflict(warrior, targetWarrior, weapon);
+                targetWarrior.currentConfict = conflict;
+            }
+            else
+            {
+                messageContainer = new MessageContainer(warrior, "Could not find Warror: " + targetName);
+                battleQueue.add(messageContainer);
+                notify();
+            }
+        }
+        else if(warrior.currentConfict != null)
+        {
+            //This is a responce to a attack
+            Conflict currentConflict = warrior.currentConfict;
+            currentConflict.Defence = warriorMessage;
+            ResolveConflict(currentConflict);
+            
+        }
+        else
+        {
+            //Just a message
+           /* moderatorMessage = "Warrior:" + warrior.WarriorName + " ID: " + senderIP + ":" + senderPort + " : " + warriorMessage;
+            messageContainer.Message = moderatorMessage;
+            battleQueue.add(messageContainer);
+            notify();
+            */
+        }
+
     }
- 
-    /*
-     * Pulls next command from queue stack in battleQueue, returns the value to
-     * the run() method for parsing and finally removes the command from queue
+
+    /**
+     * Pulls next command from queue stack in battleQueue and for now
+     * just dumps it out to all the clients for testing purposes
      */
-    private synchronized String getNextMessageFromQueue() throws InterruptedException
+    private synchronized MessageContainer getNextMessageFromQueue()
+    throws InterruptedException
     {
         while (battleQueue.isEmpty())
            wait();
-        String warriorCommand = (String) battleQueue.get(0);
+        MessageContainer messageContainer = (MessageContainer) battleQueue.get(0);
         battleQueue.remove(0);
-        return warriorCommand;
+        return messageContainer;
     }
  
     /**
@@ -68,139 +247,162 @@ public class ServerModerator extends Thread {
      * message is added to the client sender threads message queue and this
      * client sender thread is notified.
      */
-    private synchronized void sendMessageToAllClients(String aMessage)
+    private synchronized void sendMessageToAllClients(MessageContainer messageContainer)
     {
         for (int i=0; i<warriors.size(); i++) {
-           WarriorObj clientInfo = (WarriorObj) warriors.get(i);
-           clientInfo.thisWarriorSender.sendMessage(aMessage);
+           WarriorObj warrior = (WarriorObj) warriors.get(i);
+           warrior.thisWarriorSender.sendMessage(messageContainer);
         }
     }
     
+    private synchronized void sendMessageToWarrior(MessageContainer messageContainer)
+    {
+        WarriorObj warrior = messageContainer.Warrior;
+        warrior.thisWarriorSender.sendMessage(messageContainer);
+    } 
+ 
     /**
-     * Sends given message to specific client. Actually the
-     * message is added to the client sender threads message queue and this
-     * client sender thread is notified.
-     */
-    private synchronized void sendMessageToClient(WarriorObj existingWarrior, String aMessage)
-    {
-           existingWarrior.thisWarriorSender.sendMessage(aMessage);
-    }    
-
-    public String getClientAddress(WarriorObj existingWarrior)
-    {
-        Socket socket = existingWarrior.warriorSocket;
-        String senderIP = socket.getInetAddress().getHostAddress();
-        String senderPort = "" + socket.getPort();
-        return senderIP + ":" + senderPort;
-    }
-    
-    public String getTimeStamp()
-    {
-        Date date = new Date();
-        SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yyyy h:mm:ss a");
-        String formattedDate = sdf.format(date);
-        return formattedDate;
-    }
-    
-    public String getWarriorList(WarriorObj thisWarrior)
-    {
-        String warriorList = "Choose a Warrior to attack and Combat Action\n" + combatMenu + "\n";
-        for (int i=0; i<warriors.size(); i++) {
-           WarriorObj clientInfo = (WarriorObj) warriors.get(i);
-           
-           //Skip adding the requesting warrior to their own attack menu! 
-           if (thisWarrior.warriorName == clientInfo.warriorName)
-                continue;
-           warriorList = warriorList + i + ":" + clientInfo.warriorName + "\n";
-        }
-        
-        warriorList = warriorList + "Enter a warrior number, dash (-) and action; for example, 0-stab: ";
-        
-        if (warriors.size() > 1)
-            return warriorList;
-        else
-            return "Waiting for more warriors...";
-    }    
-    
-    public String getWarriorHealth(WarriorObj thisWarrior)
-    {
-        String warriorHealth = "\n\n--------------------------------------------\n" + 
-                thisWarrior.warriorName + ", your current health is " + thisWarrior.warriorHealth + "\n";
-        return warriorHealth;
-    }
-    
-    public void warriorAttack(WarriorObj attackingWarrior, String defendingWarriorID, String combatAction)
-    {
-        WarriorObj defendingWarrior = (WarriorObj) warriors.get(Integer.parseInt(defendingWarriorID));
-        sendMessageToAllClients(attackingWarrior.warriorName + " has attacked " + defendingWarrior.warriorName +
-                " with " + combatAction + "!");
-    }
-    
-    public void parseWarriorCommand(String warriorCommand)
-    {
-        /* Gather the warrior object for this command by first parsing out the
-        * Warrior's ID from the command String and then retrieving the specific Warrior
-        */
-        int warriorID = Integer.parseInt(warriorCommand.substring(0, warriorCommand.indexOf(":")));
-        String parsedWarriorCommand = warriorCommand.substring(warriorCommand.indexOf(":")+1);
-                
-        WarriorObj thisWarrior = (WarriorObj) warriors.get(warriorID);
-        
-        /* If this warrior command contains their chosen name, assign it to the object
-           and issue a public announcement to the clients about the new combatant */ 
-        if (parsedWarriorCommand.contains("(warrior_name)"))
-        {
-            thisWarrior.warriorName = parsedWarriorCommand.substring(parsedWarriorCommand.indexOf(")")+1);
-            sendMessageToAllClients("(combat moderator) A new Warrior has arrived!\n" +
-                       "(combat moderator) All Hail " + thisWarrior.warriorName + "!!\n");
-            //Send the user's warrior health & the warrior list
-            sendMessageToClient(thisWarrior, getWarriorHealth(thisWarrior));
-            sendMessageToClient(thisWarrior, getWarriorList(thisWarrior));
-        }
-        
-        // Check to make sure the warrior has submitted a valid combat action or return invalid option
-        // slash stab kick punch
-        else 
-        {
-           if (parsedWarriorCommand.contains("slash"))
-               warriorAttack(thisWarrior,parsedWarriorCommand.substring(0,parsedWarriorCommand.indexOf("-")),"slash");
-           else if (parsedWarriorCommand.contains("stab"))
-               warriorAttack(thisWarrior,parsedWarriorCommand.substring(0,parsedWarriorCommand.indexOf("-")),"slash");
-           else if (parsedWarriorCommand.contains("kick"))
-               warriorAttack(thisWarrior,parsedWarriorCommand.substring(0,parsedWarriorCommand.indexOf("-")),"slash");
-           else if (parsedWarriorCommand.contains("punch"))
-               warriorAttack(thisWarrior,parsedWarriorCommand.substring(0,parsedWarriorCommand.indexOf("-")),"slash");
-           else { //Invalid command, send the client the warrior list & actions
-               sendMessageToClient(thisWarrior, "You have sent an invalid command!\n");
-               sendMessageToClient(thisWarrior, getWarriorHealth(thisWarrior));
-               sendMessageToClient(thisWarrior, getWarriorList(thisWarrior));
-           }
-        }
-            
-    }    
-    
-    /**
-     * Infinitely reads messages from the queue and decide whether the command
-     * is for clients or server recording only.
+     * Infinitely reads messages from the queue and dispatch them
+     * to all clients connected to the server.
      */
     public void run()
     {
-        //Initialized server message (one-time only)
-        battleQueue.add("(server_message)-" + getTimeStamp() + " The server has been initiated\n\n");
+        battleQueue.add(new MessageContainer(null, "The server has been initiated\n"));
         try {
            while (true) {
-               String warriorCommand = getNextMessageFromQueue();
-               
-               //Parse the next queue command; if it's a local server message,
-               //then output to local server log/interface
-               if (warriorCommand.startsWith("(server_message)"))
-                    System.out.println(warriorCommand);
+               MessageContainer messageContainer = getNextMessageFromQueue();
+               if(messageContainer.Warrior != null)
+               {
+                   sendMessageToWarrior(messageContainer);
+               }
                else
-                   // Its not a server message, so process the command and move on 
-                   parseWarriorCommand(warriorCommand);
+               {
+                   sendMessageToAllClients(messageContainer);
+               }
+               
+               System.out.println(messageContainer);
            }
         } catch (InterruptedException ie) {
            // Thread interrupted. Stop its execution
         }
     }
+    
+    private Boolean DoesWarriorFileExist(WarriorObj warrior)
+    {
+        Boolean doesWarriorFileExist = false;
+        String filePath = System.getProperty("user.dir") + "/" + warrior.WarriorName + ".wdat";
+        File file = new File(filePath);
+        if (file.isFile() && file.canRead())
+        {
+            doesWarriorFileExist = true;
+        }
+        
+        return doesWarriorFileExist;
+    }
+    
+    private WarriorObj OpenWarriorFile(WarriorObj warrior)
+    {
+        String warriorInfo = "";
+        //Will read file under JeerpeedaServer Directory.  Added System.getProperty("user.dir") just to make sure we read the right loaction
+        String filePath = System.getProperty("user.dir") + "/" + warrior.WarriorName + ".wdat";
+        Path path = FileSystems.getDefault().getPath(filePath);
+
+        //use file class to check if file exist
+        File file = new File(filePath);
+        if (file.isFile() && file.canRead())
+        {
+          try 
+          {
+              InputStream in = null;
+                try 
+                {
+                    in = Files.newInputStream(path);
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(in));
+                    String fileInput = null;
+                    while ((fileInput = reader.readLine()) != null) 
+                    {
+                        warriorInfo += fileInput;
+                    }
+                    
+                    if(!warriorInfo.isEmpty())
+                    {
+                         for (String subString: warriorInfo.split(";"))
+                         {
+                            if(!subString.isEmpty())
+                            {
+                                String[] subStrings = subString.split("=");
+                                String keyString = subStrings[0];
+                                String valueString = subStrings[1];
+                                
+                                 switch (keyString) {
+                                    case "WarriorName":  
+                                        warrior.WarriorName = valueString;
+                                        break;
+                                    case "HealthLevel":  
+                                        warrior.HealthLevel =  Integer.parseInt(valueString);
+                                        break;
+                                    case "PlaceOfOrigin":  
+                                        warrior.PlaceOfOrigin = valueString;
+                                        break;
+                                    case "Description":  
+                                        warrior.Description = valueString;
+                                        break;
+                                 }
+
+                            }
+                         }
+                         warrior.IsRegistered = true;
+                         warrior.Status = "Ready";
+                         DisplayWarriorList();
+
+                    }
+                
+                } 
+                finally 
+                {
+                    in.close();
+                }
+          } 
+          catch (IOException ex) 
+          {
+            // Appropriate error handling here.
+          }
+        }
+        else
+        {
+            //File not found.  Create File
+            BufferedWriter writer = null;
+            try
+            {
+                writer = new BufferedWriter( new FileWriter( filePath));
+                warriorInfo = "WarriorName=" + warrior.WarriorName;
+                warriorInfo = "HealthLevel=" + warrior.HealthLevel;
+                warriorInfo += ";PlaceOfOrigin=" + warrior.PlaceOfOrigin;
+                warriorInfo += ";Description=" + warrior.Description;
+                writer.write(warriorInfo);
+                
+                warrior.IsRegistered = true;
+                warrior.Status = "Ready";
+                DisplayWarriorList();
+            }
+            catch ( IOException e)
+            {
+            }
+            finally
+            {
+                try
+                {
+                    if ( writer != null)
+                    writer.close( );
+                }
+                catch ( IOException e)
+                {
+                }
+            }
+        }    
+            
+            
+        return warrior;
+    }
+    
 }

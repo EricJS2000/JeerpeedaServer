@@ -26,7 +26,7 @@ public class WarriorSender extends Thread
      * (actually getNextMessageFromQueue method) that a message is arrived.
      * sendMessage is called by other threads (ServeDispatcher).
      */
-    public synchronized void sendMessage(String aMessage)
+    public synchronized void sendMessage(MessageContainer aMessage)
     {
         mMessageQueue.add(aMessage);
         notify();
@@ -37,11 +37,11 @@ public class WarriorSender extends Thread
      * is empty, falls in sleep until notified for message arrival by sendMessage
      * method.
      */
-    private synchronized String getNextMessageFromQueue() throws InterruptedException
+    private synchronized MessageContainer getNextMessageFromQueue() throws InterruptedException
     {
         while (mMessageQueue.size()==0)
            wait();
-        String message = (String) mMessageQueue.get(0);
+        MessageContainer message = (MessageContainer) mMessageQueue.get(0);
         mMessageQueue.removeElementAt(0);
         return message;
     }
@@ -63,8 +63,8 @@ public class WarriorSender extends Thread
     {
         try {
            while (!isInterrupted()) {
-               String message = getNextMessageFromQueue();
-               sendMessageToClient(message);
+               MessageContainer messageContainer = getNextMessageFromQueue();
+               sendMessageToClient(messageContainer.Message);
            }
         } catch (Exception e) {
            // Communication problem
