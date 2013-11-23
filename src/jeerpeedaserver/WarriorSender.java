@@ -61,11 +61,13 @@ public class WarriorSender extends Thread
      */
     public void run()
     {
-        try {
-           while (!isInterrupted()) {
+        try 
+        {
+           while (!isInterrupted()) 
+           {
                MessageContainer messageContainer = getNextMessageFromQueue();
                sendMessageToClient(messageContainer.Message);
-           }
+           }// end of while loop
         } catch (Exception e) {
            // Communication problem
         }
@@ -73,6 +75,6 @@ public class WarriorSender extends Thread
         // Communication is broken. Interrupt both listener and sender threads
         mWarriorInfo.thisWarriorListener.interrupt();
         mServerModerator.deleteWarrior(mWarriorInfo);
-    }
+    } // end of public run
  
-}
+} // public class WarriorSender

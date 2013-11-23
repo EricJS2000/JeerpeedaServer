@@ -39,9 +39,11 @@ public class JeerpeedaServer {
                warriorListener.start();
                warriorSender.start();
                serverMod.addWarrior(newWarrior);
-           } catch (IOException ioe) {
+           } 
+           catch (IOException ioe)
+           { // to catch any errors
                ioe.printStackTrace();
            }
-        }    
-    }
-}
+        } // end of while loop   
+    } // end of main
+} // end of public class JeerpeedaServer 

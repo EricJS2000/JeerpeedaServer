@@ -25,13 +25,20 @@ public class WarriorListener extends Thread
     public void run()
     {
         try {
-           while (!isInterrupted()) {
+           while (!isInterrupted()) 
+           {
+               //check healh
+               if(thisWarriorInfo.HealthLevel <= 0)
+               {
+                   thisServerModerator.warriorIsDead(thisWarriorInfo);
+               }
+               
                String warriorMessage = mIn.readLine();
                if (warriorMessage == null)
                    break;
                //thisServerModerator.warriorCommandsQueue(thisWarriorInfo, warriorCommand);
                thisServerModerator.warriorCommandsQueue(new MessageContainer(thisWarriorInfo, warriorMessage));
-           }
+           } // end of while loop
         } catch (IOException ioex) {
            // Problem reading from socket (communication is broken)
         }
@@ -39,6 +46,6 @@ public class WarriorListener extends Thread
         // Communication is broken. Interrupt both listener and sender threads
         thisWarriorInfo.thisWarriorSender.interrupt();
         thisServerModerator.deleteWarrior(thisWarriorInfo);
-    }
+    } // end of public run
  
-}
+} // end of public class WarriorListener

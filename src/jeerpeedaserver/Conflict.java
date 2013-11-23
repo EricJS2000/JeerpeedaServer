@@ -12,6 +12,7 @@ package jeerpeedaserver;
  */
 public class Conflict 
 {
+    // set up the Warrior objects, weapons, and defence
     public WarriorObj Attacker = null;
     public WarriorObj Target = null;
     public String Weapon;
@@ -23,4 +24,4 @@ public class Conflict
         this.Target = Target;
         this.Weapon = Weapon;
     }
-}
+} // end of public class Conflict 

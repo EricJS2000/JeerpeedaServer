@@ -54,4 +54,4 @@ public class WarriorObj {
         this.isRegistered = isRegistered;
     } 
     */
-}
+} // public class WarriorObj
