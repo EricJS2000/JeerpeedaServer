@@ -45,7 +45,6 @@ public class ServerModerator extends Thread {
         WarriorObj attackerWarrior = currentConflict.Attacker;
         WarriorObj targetWarrior = currentConflict.Target;
 
-        attackerWarrior.HealthLevel = attackerWarrior.HealthLevel + 10;
         targetWarrior.HealthLevel = targetWarrior.HealthLevel - 10;
         
         MessageContainer attackerMessage = new MessageContainer(attackerWarrior, targetWarrior.WarriorName + " Defended with " +
@@ -57,7 +56,10 @@ public class ServerModerator extends Thread {
         notify();
         
         attackerWarrior.Status = "Ready";
-        targetWarrior.Status = "Ready";
+        
+        if(targetWarrior.HealthLevel > 0)
+            targetWarrior.Status = "Ready";
+        UpdateWarriorFile(targetWarrior);
         targetWarrior.currentConfict = null;
     }
     
@@ -83,9 +85,21 @@ public class ServerModerator extends Thread {
     //Method for deleting warriors from the server & battlefield
     public synchronized void deleteWarrior(WarriorObj existingWarrior)
     {
+        //Kill the client connection
+        existingWarrior.thisWarriorListener.interrupt();
+        
         int clientIndex = warriors.indexOf(existingWarrior);
         if (clientIndex != -1)
            warriors.remove(clientIndex);
+        
+        String warriorInfo = "";
+        //Will read file under JeerpeedaServer Directory.  Added System.getProperty("user.dir") just to make sure we read the right loaction
+        String filePath = System.getProperty("user.dir") + "/" + existingWarrior.WarriorName + ".wdat";
+        Path path = FileSystems.getDefault().getPath(filePath);
+
+        //Permanently delete the warrior's file
+        File file = new File(path.toString());
+        file.delete();
         
         DisplayWarriorList();
     }
@@ -172,6 +186,7 @@ public class ServerModerator extends Thread {
                         moderatorMessage = "Please enter a warrior Description:";
                         warrior.Status = "NeedDescription";
                     }
+
                     break; 
             }
             messageContainer = new MessageContainer(warrior, moderatorMessage);
@@ -216,6 +231,16 @@ public class ServerModerator extends Thread {
             ResolveConflict(currentConflict);
             
         }
+        else if(warriorMessage.contains("ImDead"))
+        {
+            //This warrior is dead as a doornail- remove it from the array & notify all
+                    //Send public message of the death
+            MessageContainer killMsg = new MessageContainer(null, "A warrior has fallen.. " + 
+                "farewell mighty " + warrior.WarriorName);
+            sendMessageToAllClients(killMsg);
+            deleteWarrior(warrior);
+        }
+        
         else
         {
             //Just a message
@@ -405,4 +430,41 @@ public class ServerModerator extends Thread {
         return warrior;
     }
     
+    private WarriorObj UpdateWarriorFile(WarriorObj warrior)
+    {
+        String warriorInfo = "";
+        //Will read file under JeerpeedaServer Directory.  Added System.getProperty("user.dir") just to make sure we read the right loaction
+        String filePath = System.getProperty("user.dir") + "/" + warrior.WarriorName + ".wdat";
+        Path path = FileSystems.getDefault().getPath(filePath);
+
+        File file = new File(path.toString());
+        file.delete();
+        
+            BufferedWriter writer = null;
+            try
+            {
+                writer = new BufferedWriter( new FileWriter( filePath));
+                warriorInfo = "WarriorName=" + warrior.WarriorName;
+                warriorInfo = "HealthLevel=" + warrior.HealthLevel;
+                warriorInfo += ";PlaceOfOrigin=" + warrior.PlaceOfOrigin;
+                warriorInfo += ";Description=" + warrior.Description;
+                writer.write(warriorInfo);
+            }
+            catch ( IOException e)
+            {
+            }
+            finally
+            {
+                try
+                {
+                    if ( writer != null)
+                    writer.close( );
+                }
+                catch ( IOException e)
+                {
+                }
+            }        
+        
+        return warrior;
+    }
 }

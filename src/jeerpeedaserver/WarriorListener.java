@@ -37,7 +37,6 @@ public class WarriorListener extends Thread
         }
  
         // Communication is broken. Interrupt both listener and sender threads
-        thisWarriorInfo.thisWarriorSender.interrupt();
         thisServerModerator.deleteWarrior(thisWarriorInfo);
     }
  
